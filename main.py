@@ -225,6 +225,26 @@ class BaseWindow(QWidget):
         qp.drawRect(0, 0, self.width(), self.button_close.height() - 2)
 
 
+class Firebase:
+    def __init__(self):
+        self.cred = credentials.Certificate('firebase.json')
+        v = firebase_admin.initialize_app(self.cred, {
+            'databaseURL': 'https://cipher-base-default-rtdb.firebaseio.com/'
+        })
+
+    def create_user(self, password):
+        global database
+        ref = db.reference('/')
+        ref.set({
+            f'{database.get_login()}': {
+                'password': f'{password}',
+                'note': ''
+            }
+        })
+
+    # def
+
+
 class RegistrationDialog(QDialog):
     def __init__(self, labels, parent=None, main_=None):
         super().__init__(parent)
@@ -251,8 +271,8 @@ class RegistrationDialog(QDialog):
         return tuple(input.text() for input in self.inputs)
 
     def ok(self):  # Обработка нажатия на кнопку 'ок'
-        global database
-        print(self.get_inputs())
+        global database, firebase
+        firebase.create_user(generate_hash(self.get_inputs()[1]))
         try:
             database.set_firebase(1)
         except BaseException:
@@ -354,10 +374,8 @@ class StartWindow(QWidget):
             database.set_hash(key)
             registration_dialog = RegistrationDialog(labels=['Login', 'Password'], main_=self)
             registration_dialog.exec()
-        except BaseException as e:
+        except BaseException:
             notify('Error: check the input path or another problem', 'Error')
-            print(e)
-        print(key)
 
     def animate_(self):
         if self.alpha + 0.1 > 1.0:
@@ -470,6 +488,7 @@ class StartWindow(QWidget):
 app = QApplication(sys.argv)
 
 database = None
+firebase = Firebase()
 
 
 def create_database(path):
