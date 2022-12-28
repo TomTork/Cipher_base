@@ -5,14 +5,17 @@ import sqlite3
 import string
 import sys
 import firebase_admin
+from PyQt6.uic.properties import QtGui
 from firebase_admin import credentials
 from firebase_admin import db
 import plyer
 from PyQt6 import QtWidgets, QtCore
 from PyQt6.QtCore import Qt, QEvent, QTimer
-from PyQt6.QtGui import QIcon, QColor, QPainter, QFontDatabase, QFont
+from PyQt6.QtGui import QIcon, QColor, QPainter, QFontDatabase, QFont, QShortcut, QKeySequence, QStandardItemModel, \
+    QStandardItem, QKeyEvent
 from PyQt6.QtWidgets import QWidget, QLabel, QStyle, QApplication, QPushButton, QVBoxLayout, QHBoxLayout, QFormLayout, \
-    QGridLayout, QLineEdit, QDialog, QDialogButtonBox, QMessageBox
+    QGridLayout, QLineEdit, QDialog, QDialogButtonBox, QMessageBox, QStackedLayout, QLayout, QGraphicsAnchorLayout, \
+    QListWidget, QListView, QAbstractItemView
 
 
 def notify(text, title):  # Функция для уведомления пользователя, автоматически не скипается
@@ -29,7 +32,7 @@ def generate_hash(key):
 class Database:
     def __init__(self, path=''):
         self.path_ = ''
-        if not os.path.isfile('database.db'):
+        if not os.path.isfile(f'/path.txt'):
             conn = sqlite3.connect(f'{path}/database.db')
             c = conn.cursor()
             c.execute("""
@@ -38,15 +41,14 @@ class Database:
                                 hash_key text,
                                 resolution_main text,
                                 resolution_note text,
-                                firebase_ integer,
-                                login_ text,
-                                password_ text);       
+                                firebase1 integer,
+                                login1 text,
+                                password1 text);       
                                             """)
             conn.commit()
             c.execute('''insert into main values(0, "empty", "1200x800", "1920x1080", 0, "", "")''')
             conn.commit()
         self.path_ = open('path.txt').readline()
-        print(self.path_)
 
     def get_login(self):
         conn = sqlite3.connect(f'{self.path_}/database.db')
@@ -59,7 +61,7 @@ class Database:
     def get_password(self):
         conn = sqlite3.connect(f'{self.path_}/database.db')
         c = conn.cursor()
-        c.execute('select password_ from main where identity=0')
+        c.execute('select password1 from main where identity=0')
         temp = c.fetchone()[0]
         conn.close()
         return temp
@@ -67,31 +69,32 @@ class Database:
     def set_password(self, value):
         conn = sqlite3.connect(f'{self.path_}/database.db')
         c = conn.cursor()
-        c.execute(f'update main set password_="{value}" where identity=0')
+        c.execute(f'update main set password1="{value}" where identity=0')
         conn.commit()
         conn.close()
 
     def set_login(self, value):
         conn = sqlite3.connect(f'{self.path_}/database.db')
         c = conn.cursor()
-        c.execute(f'update main set login_="{value}" where identity=0')
+        c.execute(f'update main set login1="{value}" where identity=0')
         conn.commit()
         conn.close()
 
     def get_firebase(self):
         conn = sqlite3.connect(f'{self.path_}/database.db')
         c = conn.cursor()
-        c.execute('select firebase_ from main where identity=0')
+        c.execute('select firebase1 from main where identity=0')
         temp = int(c.fetchone()[0])
         conn.close()
         if temp == 1:
             return True
         return False
 
-    def set_firebase(self, value):
+    def set_firebase(self, value: int):
         conn = sqlite3.connect(f'{self.path_}/database.db')
         c = conn.cursor()
-        c.execute(f'update main set firebase_={value} where identity=0')
+        print('xxx', self.path_)
+        c.execute(f'update main set firebase1={value} where identity=0')
         conn.commit()
         conn.close()
 
@@ -146,6 +149,10 @@ class BaseWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.w_max = 35
+        self.g_list = []
+        self.index_click = []
+
+        self.current_w = 0
         self.button_close = QPushButton(self)
         self.button_close.setIcon(QIcon('assets/window_header/button_close.png'))
         self.button_close.setMinimumWidth(self.w_max)
@@ -162,8 +169,91 @@ class BaseWindow(QWidget):
         self.button_full_screen.clicked.connect(lambda: self.full_screen())
         self.full_window = False
 
+        shortcut_add = QShortcut(QKeySequence("ctrl+t"), self)
+        shortcut_add.activated.connect(lambda: self.new_note())
+        shortcut_close = QShortcut(QKeySequence('ctrl+w'), self)
+        shortcut_close.activated.connect(lambda: self.close_note())
+        shortcut_next = QShortcut(QKeySequence('ctrl+tab'), self)
+        shortcut_next.activated.connect(lambda: self.next_note())
+
+        # new_note_button = QPushButton(self)
+        # new_note_button.setText('New note')
+        # new_note_button.setStyleSheet(f'border-style: outset; border-radius: 6px;'
+        #                               f' color: rgba(235, 235, 235, 1); background: black; size: 25;')
+        # new_note_button.setFont(QFont(QFontDatabase.applicationFontFamilies(set_font(False)), 12))
+
+        self.main_window = QPushButton(self)
+        self.main_window.setText('Main menu')
+        self.main_window.setIcon(QIcon('assets/interface/main_button.png'))
+        self.main_window.setStyleSheet('QPushButton{color: white; max-width: 150;}'
+                                       ' QPushButton::hover{background-color : #858585;};')
+        self.main_window.setFont(QFont(QFontDatabase.applicationFontFamilies(set_font(False)), 12))
         self.init_ui()
+
+        self.list_tabs = []
+        self.update_buttons()
+
+        void = QLabel(self)
+        self.add_items(self.list_tabs)
+        self.add_item(void)
         self.setFocus()
+
+    def add_button(self, text):
+        self.list_tabs.append(QPushButton(self, text=text))
+        if text not in self.g_list:
+            self.g_list.append(text)
+        self.update_buttons()
+
+    def update_buttons(self):
+        for i in range(len(self.list_tabs)):
+            if i <= len(self.g_list):
+                if self.list_tabs[i].text() not in self.g_list:
+                    self.g_list.append(self.list_tabs[i].text())
+            else:
+                self.g_list[i] = self.list_tabs[i].text()
+            if i not in self.index_click:
+                self.list_tabs[i].clicked.connect(lambda: self.click_button_list())
+                self.index_click.append(i)
+
+    def click_button_list(self):
+        rbt = self.sender()
+        index = self.g_list.index(str(rbt.text()))
+        print(index)
+
+    def add_items(self, items, texts=None):
+        for i in range(len(items)):
+            try:
+                items[i].setText(texts[i])
+                self.g_list[i] = texts[i]
+            except BaseException:
+                pass
+            items[i].setStyleSheet('QPushButton{color: white; max-width: 150;}'
+                                   ' QPushButton::hover{background-color : #858585;};')
+            items[i].setFont(QFont(QFontDatabase.applicationFontFamilies(set_font(False)), 10))
+            self.h1.addWidget(items[i])
+
+    def add_item(self, item, text=None):
+        if text is not None:
+            item.setText(text)
+        self.h1.addWidget(item)
+
+    def new_note(self):
+        print('new note')
+
+    def close_note(self):
+        print('closed')
+
+    def next_note(self):
+        try:
+            self.current_w += 1
+        except BaseException:
+            self.current_w = 0
+
+    def current_window(self, number):
+        try:
+            self.current_w = number
+        except BaseException:
+            self.current_w = 0
 
     def init_ui(self):
         self.setGeometry(100, 100, 1200, 800)  # Размеры окна
@@ -179,7 +269,6 @@ class BaseWindow(QWidget):
         self.button_collapse.setStyleSheet("QPushButton::hover{background-color : #858585;}")
 
         main_layout = QFormLayout(self)
-        main_layout.setSpacing(0)
         l_main = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -189,8 +278,17 @@ class BaseWindow(QWidget):
         l2.addWidget(self.button_close, 0, 2)
         l2.setAlignment(Qt.AlignmentFlag.AlignRight)
 
+        self.h1 = QHBoxLayout(self)
+        self.h1.setSpacing(2)
+        self.h1.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.h1.addWidget(self.main_window)
+
+        self.vv = QVBoxLayout(self)
+
         l_main.addLayout(l2)
+        l_main.addLayout(self.h1)
         main_layout.addItem(l_main)
+        self.setLayout(main_layout)
 
     def mousePressEvent(self, event):
         s = str(event.pos())
@@ -242,8 +340,6 @@ class Firebase:
             }
         })
 
-    # def
-
 
 class RegistrationDialog(QDialog):
     def __init__(self, labels, parent=None, main_=None):
@@ -282,7 +378,6 @@ class RegistrationDialog(QDialog):
         global database
         self.main_.close()
         self.close()
-        database.set_firebase(0)
         base_window = BaseWindow()
         base_window.show()
 
@@ -505,15 +600,15 @@ def set_font(logo=False):
 
 
 def main():
-    print(generate_hash('123'))
     try:
         f = open('path.txt', 'r')
         create_database(f.readline())
         f.close()
+        base_window = BaseWindow()
+        base_window.show()
     except BaseException:
-        pass
-    start_window = StartWindow()
-    start_window.show()
+        start_window = StartWindow()
+        start_window.show()
     sys.exit(app.exec())
 
 
